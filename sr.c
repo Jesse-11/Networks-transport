@@ -22,11 +22,11 @@
    - added GBN implementation
 **********************************************************************/
 
-#define RTT  16.0       /* round trip time.  MUST BE SET TO 16.0 when submitting assignment */
-#define WINDOWSIZE 6    /* the maximum number of buffered unacked packet
-                          MUST BE SET TO 6 when submitting assignment */
-#define SEQSPACE 7      /* the min sequence space for GBN must be at least windowsize + 1 */
-#define NOTINUSE (-1)   /* used to fill header fields that are not being used */
+#define RTT           16.0                /* round trip time.  MUST BE SET TO 16.0 when submitting assignment */
+#define WINDOWSIZE    6                   /* the maximum number of buffered unacked packet
+                                          MUST BE SET TO 6 when submitting assignment */
+#define SEQSPACE      (WINDOWSIZE * 2)    /* the min sequence space for GBN must be at least windowsize + 1 */
+#define NOTINUSE      (-1)                /* used to fill header fields that are not being used */
 
 /* generic procedure to compute the checksum of a packet.  Used by both sender and receiver
    the simulator will overwrite part of your packet with 'z's.  It will not overwrite your
@@ -57,10 +57,21 @@ bool IsCorrupted(struct pkt packet)
 
 /********* Sender (A) variables and functions ************/
 
-static struct pkt buffer[WINDOWSIZE];  /* array for storing packets waiting for ACK */
-static int windowfirst, windowlast;    /* array indexes of the first/last packet awaiting ACK */
-static int windowcount;                /* the number of packets currently awaiting an ACK */
-static int A_nextseqnum;               /* the next sequence number to be used by the sender */
+static struct pkt buffer[SEQSPACE];  /* array for storing packets waiting for ACK */
+static bool       ack_send[SEQSPACE]; /* array for storing ACKs sent */
+static int        base_a;             /* oldest un ack'd seq num */
+static int        next_a;             /* next seq num to send */
+static bool       _timer_running;      /* true if timer is running */
+
+static int outstanding(void) {
+  for (int i = 0; i < WINDOWSIZE; i++) {
+    int seq = (base_a + i) % SEQSPACE;
+    if (!ack_send[seq]) {
+      return seq;
+    }
+    return -1;
+  }
+}
 
 /* called from layer 5 (application layer), passed the message to be sent to other side */
 void A_output(struct msg message)

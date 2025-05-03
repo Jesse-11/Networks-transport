@@ -22,11 +22,11 @@
    - added GBN implementation
 **********************************************************************/
 
-#define RTT           16.0                /* round trip time.  MUST BE SET TO 16.0 when submitting assignment */
-#define WINDOWSIZE    6                   /* the maximum number of buffered unacked packet
-                                          MUST BE SET TO 6 when submitting assignment */
-#define SEQSPACE      (WINDOWSIZE * 2)    /* the min sequence space for GBN must be at least windowsize + 1 */
-#define NOTINUSE      (-1)                /* used to fill header fields that are not being used */
+#define RTT  16.0       /* round trip time.  MUST BE SET TO 16.0 when submitting assignment */
+#define WINDOWSIZE 6    /* the maximum number of buffered unacked packet
+                          MUST BE SET TO 6 when submitting assignment */
+#define SEQSPACE 7      /* the min sequence space for GBN must be at least windowsize + 1 */
+#define NOTINUSE (-1)   /* used to fill header fields that are not being used */
 
 /* generic procedure to compute the checksum of a packet.  Used by both sender and receiver
    the simulator will overwrite part of your packet with 'z's.  It will not overwrite your
@@ -57,21 +57,10 @@ bool IsCorrupted(struct pkt packet)
 
 /********* Sender (A) variables and functions ************/
 
-static struct pkt buffer[SEQSPACE];  /* array for storing packets waiting for ACK */
-static bool       ack_send[SEQSPACE]; /* array for storing ACKs sent */
-static int        base_a;             /* oldest un ack'd seq num */
-static int        next_a;             /* next seq num to send */
-static bool       _timer_running;      /* true if timer is running */
-
-static int outstanding(void) {
-  for (int i = 0; i < WINDOWSIZE; i++) {
-    int seq = (base_a + i) % SEQSPACE;
-    if (!ack_send[seq]) {
-      return seq;
-    }
-    return -1;
-  }
-}
+static struct pkt buffer[WINDOWSIZE];  /* array for storing packets waiting for ACK */
+static int windowfirst, windowlast;    /* array indexes of the first/last packet awaiting ACK */
+static int windowcount;                /* the number of packets currently awaiting an ACK */
+static int A_nextseqnum;               /* the next sequence number to be used by the sender */
 
 /* called from layer 5 (application layer), passed the message to be sent to other side */
 void A_output(struct msg message)
@@ -199,12 +188,14 @@ void A_timerinterrupt(void)
 /* entity A routines are called. You can use it to do any initialization */
 void A_init(void)
 {
-  base_a = 0;
-  next_a = 0;
-  _timer_running = false;
-  for (int i = 0; i < SEQSPACE; i++) {
-    ack_send[i] = false;
-  }
+  /* initialise A's window, buffer and sequence number */
+  A_nextseqnum = 0;  /* A starts with seq num 0, do not change this */
+  windowfirst = 0;
+  windowlast = -1;   /* windowlast is where the last packet sent is stored.
+		     new packets are placed in winlast + 1
+		     so initially this is set to -1
+		   */
+  windowcount = 0;
 }
 
 
@@ -282,3 +273,4 @@ void B_output(struct msg message)
 void B_timerinterrupt(void)
 {
 }
+

@@ -41,7 +41,7 @@ int ComputeChecksum(struct pkt packet)
   checksum = packet.seqnum;
   checksum += packet.acknum;
   for ( i=0; i<20; i++ )
-    checksum += (int)(packet.payload[i]);
+    checksum += (unsigned char)(packet.payload[i]);
 
   return checksum;
 }
@@ -57,43 +57,62 @@ bool IsCorrupted(struct pkt packet)
 
 /********* Sender (A) variables and functions ************/
 
-static struct pkt buffer[WINDOWSIZE];  /* array for storing packets waiting for ACK */
-static int windowfirst, windowlast;    /* array indexes of the first/last packet awaiting ACK */
-static int windowcount;                /* the number of packets currently awaiting an ACK */
-static int A_nextseqnum;               /* the next sequence number to be used by the sender */
+static struct pkt send_buffer[SEQSPACE];      /* holds ecopy of every packed sent but no acked*/
+static bool       send_acked[SEQSPACE];       /* holds which numbers have been acked */
+static bool       timer_running;               /* true if timer is running */
+static int        A_base;                     /* oldest un-acked (SR window left edge) */
+
+// DO I NEEED TO EDIT THEESE???????
+static int        windowcount;                /* the number of packets currently awaiting an ACK */
+static int        A_nextseqnum;               /* the next sequence number to be assigned */
+
 
 /* called from layer 5 (application layer), passed the message to be sent to other side */
 void A_output(struct msg message)
 {
   struct pkt sendpkt;
   int i;
+  int outStanding = (A_nextseqnum - A_base + SEQSPACE) % SEQSPACE;
+
 
   /* if not blocked waiting on ACK */
-  if ( windowcount < WINDOWSIZE) {
+  if ( outStanding < WINDOWSIZE) {
     if (TRACE > 1)
       printf("----A: New message arrives, send window is not full, send new messge to layer3!\n");
 
+    
     /* create packet */
     sendpkt.seqnum = A_nextseqnum;
-    sendpkt.acknum = NOTINUSE;
+    sendpkt.acknum = 0;
     for ( i=0; i<20 ; i++ )
       sendpkt.payload[i] = message.data[i];
     sendpkt.checksum = ComputeChecksum(sendpkt);
 
-    /* put packet in window buffer */
-    /* windowlast will always be 0 for alternating bit; but not for GoBackN */
+
+    /*  store the packet in the buffer 
+        put packet in window buffer 
+        windowlast will always be 0 for alternating bit; but not for GoBackN 
+
     windowlast = (windowlast + 1) % WINDOWSIZE;
     buffer[windowlast] = sendpkt;
     windowcount++;
+    */
+
 
     /* send out packet */
     if (TRACE > 0)
       printf("Sending packet %d to layer 3\n", sendpkt.seqnum);
     tolayer3 (A, sendpkt);
 
-    /* start timer if first packet in window */
-    if (windowcount == 1)
+
+    // store the packet in the buffer
+    send_buffer[A_nextseqnum] = sendpkt; /* store the packet in the buffer */
+    send_acked[A_nextseqnum] = false; /* mark the packet as unacked */
+
+    /* timer logic */
+    if (timer_running == false) {
       starttimer(A,RTT);
+      timer_running = true;
 
     /* get next sequence number, wrap back to 0 */
     A_nextseqnum = (A_nextseqnum + 1) % SEQSPACE;
@@ -104,6 +123,7 @@ void A_output(struct msg message)
       printf("----A: New message arrives, send window is full\n");
     window_full++;
   }
+}
 }
 
 
@@ -189,21 +209,36 @@ void A_timerinterrupt(void)
 void A_init(void)
 {
   /* initialise A's window, buffer and sequence number */
-  A_nextseqnum = 0;  /* A starts with seq num 0, do not change this */
+  A_nextseqnum = 0;         /* A starts with seq num 0, do not change this */
+  A_base = 0;               /* A_base is the oldest un-acked packet in the window */
+  timer_running = false;    /* timer is not running at start */
+
+  for (int i = 0; i < SEQSPACE; i++) {
+    send_acked[i] = false;    /* all packets are unacked */
+  }
+
+  // DO I NEEED TO EDIT THEESE???????
+  /*
   windowfirst = 0;
-  windowlast = -1;   /* windowlast is where the last packet sent is stored.
-		     new packets are placed in winlast + 1
-		     so initially this is set to -1
-		   */
+  windowlast = -1;    windowlast is where the last packet sent is stored.
+		                  new packets are placed in winlast + 1
+		                  so initially this is set to -1
+	
   windowcount = 0;
+  */
+
 }
 
 
 
 /********* Receiver (B)  variables and procedures ************/
 
-static int expectedseqnum; /* the sequence number expected next by the receiver */
-static int B_nextseqnum;   /* the sequence number for the next packets sent by B */
+static struct pkt recieve_buffer[SEQSPACE];       /* array for storing packets waiting for ACK */
+static bool       recieve_ready_acked[SEQSPACE];  /* array for storing ACK status of packets */
+
+// DO I NEEED TO EDIT THEESE???????
+static int        expectedseqnum;                 /* the sequence number expected next by the receiver */
+static int        B_nextseqnum;                   /* the sequence number for the next packets sent by B */
 
 
 /* called from layer 3, when a packet arrives for layer 4 at B*/

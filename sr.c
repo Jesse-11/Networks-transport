@@ -127,13 +127,26 @@ void A_output(struct msg message)
 }
 
 
+
+
+
+
+
+
+
+
 /* called from layer 3, when a packet arrives for layer 4
    In this practical this will always be an ACK as B never sends data.
 */
 void A_input(struct pkt packet)
 {
+
+  // DO I NEEED TO EDIT THEESE???????
   int ackcount = 0;
   int i;
+
+  int ack = packet.acknum;
+  int distance = (ack - A_base + SEQSPACE) % SEQSPACE;
 
   /* if received ACK is not corrupted */
   if (!IsCorrupted(packet)) {
@@ -141,42 +154,49 @@ void A_input(struct pkt packet)
       printf("----A: uncorrupted ACK %d is received\n",packet.acknum);
     total_ACKs_received++;
 
+
+
+    
+    //mark curr seq as acked
+    send_acked[ack] = true;
+
+    // slide left side (a_base) forware
+    while (send_acked[A_base] == true) {
+      send_acked[A_base] = false; // mark as unacked
+      A_base = (A_base + 1) % SEQSPACE; // slide window
+      ackcount++;
+      if (TRACE > 0)
+        printf("----A: ACK %d received, slide window to %d\n", ack, A_base);
+
+    }
+
+
+    // restart timer or stop it
+    int next = -1;
+    for (i = 0; i < SEQSPACE; i++) {
+      int seq = (A_base + i) % SEQSPACE;
+      if (!send_acked[seq]) {next = seq; break;}
+
+      if (next >= 0) {
+        if (TRACE > 0)
+          printf("----A: next unacked packet is %d\n", next);
+        starttimer(A, RTT);
+        timer_running = true;
+      }
+      else {
+        if (TRACE > 0)
+          printf("----A: all packets acked, stop timer\n");
+        stoptimer(A);
+        timer_running = false;
+      }
+
+    }
+
+
+
+
+
     /* check if new ACK or duplicate */
-    if (windowcount != 0) {
-          int seqfirst = buffer[windowfirst].seqnum;
-          int seqlast = buffer[windowlast].seqnum;
-          /* check case when seqnum has and hasn't wrapped */
-          if (((seqfirst <= seqlast) && (packet.acknum >= seqfirst && packet.acknum <= seqlast)) ||
-              ((seqfirst > seqlast) && (packet.acknum >= seqfirst || packet.acknum <= seqlast))) {
-
-            /* packet is a new ACK */
-            if (TRACE > 0)
-              printf("----A: ACK %d is not a duplicate\n",packet.acknum);
-            new_ACKs++;
-
-            /* cumulative acknowledgement - determine how many packets are ACKed */
-            if (packet.acknum >= seqfirst)
-              ackcount = packet.acknum + 1 - seqfirst;
-            else
-              ackcount = SEQSPACE - seqfirst + packet.acknum;
-
-	    /* slide window by the number of packets ACKed */
-            windowfirst = (windowfirst + ackcount) % WINDOWSIZE;
-
-            /* delete the acked packets from window buffer */
-            for (i=0; i<ackcount; i++)
-              windowcount--;
-
-	    /* start timer again if there are still more unacked packets in window */
-            stoptimer(A);
-            if (windowcount > 0)
-              starttimer(A, RTT);
-
-          }
-        }
-        else
-          if (TRACE > 0)
-        printf ("----A: duplicate ACK received, do nothing!\n");
   }
   else
     if (TRACE > 0)
